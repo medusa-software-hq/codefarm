@@ -26,6 +26,9 @@ jobs:
     name: Publish the app Worker
     runs-on: ubuntu-latest
 
+    outputs:
+      version: ${{ steps.upload.outputs.version }}
+
     defaults:
       run:
         working-directory: backend/edge
@@ -53,8 +56,10 @@ jobs:
 
       # Versioned by its SHA-256, so an unchanged bundle is already there
       - name: Upload the bundle
+        id: upload
         run: |
           version=$(sha256sum app/dist/worker.js | cut --delimiter=' ' --fields=1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           bundles=(--repository=bundles --location=europe-central2 --project="$BASE_PROJECT")
 
           if gcloud artifacts versions describe "$version" --package=edge-app "${bundles[@]}" \
@@ -65,3 +70,68 @@ jobs:
               --source=app/dist/worker.js "${bundles[@]}"
             echo "Uploaded edge-app $version" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # Pins the bundle in codefarm-infra, whose preview of the pull request shows what deploying it
+  # changes, and whose merge deploys it
+  write-back:
+    name: Write back to codefarm-infra
+    needs: publish-app
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Log in to GCP
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.CODEFARM_POOL_PROVIDER }}
+          service_account: artifact-builder@${{ env.BASE_PROJECT }}.iam.gserviceaccount.com
+
+      - name: Read the write-back GitHub App's key
+        id: secrets
+        uses: google-github-actions/get-secretmanager-secrets@v3
+        with:
+          secrets: key:${{ env.BASE_PROJECT }}/github-write-back-key
+
+      - name: Get a token for codefarm-infra
+        id: token
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          client-id: Iv23li4vccWccrn8EZ2t
+          private-key: ${{ steps.secrets.outputs.key }}
+          repositories: codefarm-infra
+          permission-contents: write
+          permission-pull-requests: write
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: medusa-software-hq/codefarm-infra
+          token: ${{ steps.token.outputs.token }}
+
+      - name: Open or update the pull request
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          APP_SLUG: ${{ steps.token.outputs.app-slug }}
+          VERSION: ${{ needs.publish-app.outputs.version }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+        run: |
+          jq --arg version "$VERSION" '.edgeApp.sha256 = $version' infra/app/artifacts.json \
+            > artifacts.json && mv artifacts.json infra/app/artifacts.json
+          if git diff --quiet; then
+            echo "codefarm-infra already pins edge-app $VERSION" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # As the App's bot account, so the commits are attributed to it
+          user_id=$(gh api "/users/$APP_SLUG%5Bbot%5D" --jq .id)
+          git config user.name "$APP_SLUG[bot]"
+          git config user.email "$user_id+$APP_SLUG[bot]@users.noreply.github.com"
+
+          # One branch, rebuilt from main each time, so there's never more than one such pull request
+          git switch --create write-back
+          git commit --all --message "Deploy edge-app ${VERSION:0:12}" --message "Built from $SOURCE"
+          git push --force origin write-back
+
+          if [[ -z $(gh pr list --head write-back --json number --jq '.[].number') ]]; then
+            gh pr create --head write-back --title "Deploy what codefarm built" \
+              --body "Pins what \`codefarm\` built and uploaded. Merging deploys it."
+          fi
+          echo "Wrote back edge-app $VERSION" >> "$GITHUB_STEP_SUMMARY"
