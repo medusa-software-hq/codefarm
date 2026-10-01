@@ -10,3 +10,7 @@ jobs:
   check-gh-workflows:
     name: GitHub workflows
     uses: ./.github/workflows/check-gh-workflows.yml
+
+  check-edge:
+    name: Edge
+    uses: ./.github/workflows/check-edge.yml

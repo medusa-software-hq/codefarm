@@ -5,8 +5,14 @@ includes:
     taskfile: github.Taskfile.yml
     dir: .
 
+  edge:
+    taskfile: backend/edge/Taskfile.yml
+    dir: backend/edge
+
 tasks:
   fixAll:
     desc: Apply all automatic fixes
     deps:
       - github:fixLint
+      - edge:fixFormatting
+      - edge:fixLint
