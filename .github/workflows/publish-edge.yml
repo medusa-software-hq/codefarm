@@ -1,0 +1,67 @@
+name: Publish edge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - backend/edge/**
+      - .github/workflows/publish-edge.yml
+  workflow_dispatch:
+
+concurrency:
+  group: publish-edge
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  NO_COLOR: 1
+  # Codefarm's pool, which trusts the artifact builder on main
+  CODEFARM_POOL_PROVIDER: projects/76431914348/locations/global/workloadIdentityPools/github/providers/github-actions
+  BASE_PROJECT: codefarm-x-07da3c
+
+jobs:
+  publish-app:
+    name: Publish the app Worker
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend/edge
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: backend/edge/.nvmrc
+
+      - name: Install dependencies
+        run: corepack yarn install --immutable
+
+      - name: Bundle the app Worker
+        run: >-
+          corepack yarn workspace app esbuild src/index.ts
+          --bundle --format=esm --platform=neutral --target=es2022 --outfile=dist/worker.js
+
+      - name: Log in to GCP
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.CODEFARM_POOL_PROVIDER }}
+          service_account: artifact-builder@${{ env.BASE_PROJECT }}.iam.gserviceaccount.com
+
+      # Versioned by its SHA-256, so an unchanged bundle is already there
+      - name: Upload the bundle
+        run: |
+          version=$(sha256sum app/dist/worker.js | cut --delimiter=' ' --fields=1)
+          bundles=(--repository=bundles --location=europe-central2 --project="$BASE_PROJECT")
+
+          if gcloud artifacts versions describe "$version" --package=edge-app "${bundles[@]}" \
+            > /dev/null 2>&1; then
+            echo "edge-app $version is already uploaded" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gcloud artifacts generic upload --package=edge-app --version="$version" \
+              --source=app/dist/worker.js "${bundles[@]}"
+            echo "Uploaded edge-app $version" >> "$GITHUB_STEP_SUMMARY"
+          fi
