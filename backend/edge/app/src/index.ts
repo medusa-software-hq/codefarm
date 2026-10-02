@@ -55,7 +55,7 @@ export default {
     }
 
     return new Response(
-      `<!doctype html><title>Codefarm</title><h1>Hello from Codefarm's ${env.ENVIRONMENT}</h1>`,
+      `<!doctype html><title>Codefarm</title><h1>Hello from Codefarm (${env.ENVIRONMENT})</h1>`,
       { headers: { 'content-type': 'text/html; charset=utf-8' } },
     );
   },

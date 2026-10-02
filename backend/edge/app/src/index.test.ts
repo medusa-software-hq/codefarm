@@ -55,7 +55,7 @@ describe('the Worker', () => {
     const response = await fetchWith(await token());
 
     assert.equal(response.status, 200);
-    assert.match(await response.text(), /Hello from Codefarm's test/);
+    assert.match(await response.text(), /Hello from Codefarm \(test\)/);
   });
 
   test('refuses a request without a token', async () => {
