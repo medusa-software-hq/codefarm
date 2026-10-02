@@ -71,8 +71,6 @@ jobs:
             echo "Uploaded edge-app $version" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-  # Pins the bundle in codefarm-infra, whose preview of the pull request shows what deploying it
-  # changes, and whose merge deploys it
   write-back:
     name: Write back to codefarm-infra
     needs: publish-app
@@ -111,7 +109,8 @@ jobs:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           APP_SLUG: ${{ steps.token.outputs.app-slug }}
           VERSION: ${{ needs.publish-app.outputs.version }}
-          SOURCE: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+          SOURCE: ${{ github.repository }}@${{ github.sha }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           pin=infra/app/artifacts/edge-app.json
           jq --arg version "$VERSION" '.sha256 = $version' "$pin" > pin.json && mv pin.json "$pin"
@@ -125,15 +124,19 @@ jobs:
           git config user.name "$APP_SLUG[bot]"
           git config user.email "$user_id+$APP_SLUG[bot]@users.noreply.github.com"
 
-          # A branch per artifact, rebuilt from main each time: one pull request per artifact, which
-          # leaves the others' alone
+          # One branch per artifact, rebuilt from main each time
           branch=write-back/edge-app
           git switch --create "$branch"
-          git commit --all --message "Deploy edge-app ${VERSION:0:12}" --message "Built from $SOURCE"
+          git commit --all --message "Update edge-app to ${VERSION:0:12}" \
+            --message "Built from $SOURCE in $RUN"
           git push --force origin "$branch"
 
-          if [[ -z $(gh pr list --head "$branch" --json number --jq '.[].number') ]]; then
-            gh pr create --head "$branch" --title "Deploy edge-app" \
-              --body "Pins the app Worker's bundle that \`codefarm\` built and uploaded. Merging deploys it."
+          # Rewritten each time, as the open pull request may have pinned an earlier bundle
+          body="Bundle \`$VERSION\`, built from $SOURCE in [$GITHUB_WORKFLOW #$GITHUB_RUN_NUMBER]($RUN)."
+          number=$(gh pr list --head "$branch" --json number --jq '.[].number')
+          if [[ -z $number ]]; then
+            gh pr create --head "$branch" --title "Update edge-app" --body "$body"
+          else
+            gh pr edit "$number" --body "$body"
           fi
           echo "Wrote back edge-app $VERSION" >> "$GITHUB_STEP_SUMMARY"
