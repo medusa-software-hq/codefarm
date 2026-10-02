@@ -113,8 +113,8 @@ jobs:
           VERSION: ${{ needs.publish-app.outputs.version }}
           SOURCE: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
         run: |
-          jq --arg version "$VERSION" '.edgeApp.sha256 = $version' infra/app/artifacts.json \
-            > artifacts.json && mv artifacts.json infra/app/artifacts.json
+          pin=infra/app/artifacts/edge-app.json
+          jq --arg version "$VERSION" '.sha256 = $version' "$pin" > pin.json && mv pin.json "$pin"
           if git diff --quiet; then
             echo "codefarm-infra already pins edge-app $VERSION" >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -125,13 +125,15 @@ jobs:
           git config user.name "$APP_SLUG[bot]"
           git config user.email "$user_id+$APP_SLUG[bot]@users.noreply.github.com"
 
-          # One branch, rebuilt from main each time, so there's never more than one such pull request
-          git switch --create write-back
+          # A branch per artifact, rebuilt from main each time: one pull request per artifact, which
+          # leaves the others' alone
+          branch=write-back/edge-app
+          git switch --create "$branch"
           git commit --all --message "Deploy edge-app ${VERSION:0:12}" --message "Built from $SOURCE"
-          git push --force origin write-back
+          git push --force origin "$branch"
 
-          if [[ -z $(gh pr list --head write-back --json number --jq '.[].number') ]]; then
-            gh pr create --head write-back --title "Deploy what codefarm built" \
-              --body "Pins what \`codefarm\` built and uploaded. Merging deploys it."
+          if [[ -z $(gh pr list --head "$branch" --json number --jq '.[].number') ]]; then
+            gh pr create --head "$branch" --title "Deploy edge-app" \
+              --body "Pins the app Worker's bundle that \`codefarm\` built and uploaded. Merging deploys it."
           fi
           echo "Wrote back edge-app $VERSION" >> "$GITHUB_STEP_SUMMARY"
