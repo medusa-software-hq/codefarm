@@ -67,7 +67,7 @@ runs:
       run: |
         jq . <<< "$PIN" > "infra/app/artifacts/$ARTIFACT.json"
         if [[ -z $(git status --porcelain) ]]; then
-          echo "codefarm-infra already pins $ARTIFACT $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "codefarm-infra already pins \`$ARTIFACT\` at \`$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
           exit 0
         fi
 
@@ -85,10 +85,10 @@ runs:
 
         # Rewritten each time, as the open pull request may have pinned an earlier version
         body="$BUILT, built from $SOURCE in [$GITHUB_WORKFLOW #$GITHUB_RUN_NUMBER]($RUN)."
-        number=$(gh pr list --head "$branch" --json number --jq '.[].number')
-        if [[ -z $number ]]; then
-          gh pr create --head "$branch" --title "Update $ARTIFACT" --body "$body"
+        url=$(gh pr list --head "$branch" --json url --jq '.[].url')
+        if [[ -z $url ]]; then
+          url=$(gh pr create --head "$branch" --title "Update $ARTIFACT" --body "$body")
         else
-          gh pr edit "$number" --body "$body"
+          gh pr edit "$url" --body "$body"
         fi
-        echo "Wrote back $ARTIFACT $VERSION" >> "$GITHUB_STEP_SUMMARY"
+        echo "Pinned \`$ARTIFACT\` at \`$VERSION\` in [codefarm-infra#${url##*/}]($url)" >> "$GITHUB_STEP_SUMMARY"

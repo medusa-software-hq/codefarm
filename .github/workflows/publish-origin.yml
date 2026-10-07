@@ -68,7 +68,7 @@ jobs:
           digest=$(cat backend/origin/service/build/jib-image.digest)
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
           echo "version=${digest#sha256:}" >> "$GITHUB_OUTPUT"
-          echo "Pushed service@$digest" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed \`service@$digest\`" >> "$GITHUB_STEP_SUMMARY"
 
   write-back:
     name: Write back to codefarm-infra
