@@ -10,3 +10,8 @@ node_modules/
 !**/.yarn/sdks
 !**/.yarn/versions
 dist/
+
+# Gradle and Kotlin state and build outputs
+.gradle/
+.kotlin/
+build/
