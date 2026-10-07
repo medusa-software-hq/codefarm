@@ -9,6 +9,10 @@ includes:
     taskfile: backend/edge/Taskfile.yml
     dir: backend/edge
 
+  gradle:
+    taskfile: gradle.Taskfile.yml
+    dir: .
+
 tasks:
   fixAll:
     desc: Apply all automatic fixes
@@ -16,3 +20,4 @@ tasks:
       - github:fixLint
       - edge:fixFormatting
       - edge:fixLint
+      - gradle:fixFormatting

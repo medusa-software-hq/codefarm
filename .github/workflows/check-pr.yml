@@ -14,3 +14,7 @@ jobs:
   check-edge:
     name: Edge
     uses: ./.github/workflows/check-edge.yml
+
+  check-backend:
+    name: Backend
+    uses: ./.github/workflows/check-backend.yml

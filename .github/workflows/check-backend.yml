@@ -1,0 +1,32 @@
+name: Check backend
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  NO_COLOR: 1
+
+jobs:
+  check-backend:
+    name: Check backend
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # The JDK Gradle itself runs on, as gradle/gradle-daemon-jvm.properties asks
+      - uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v6.4.0
+
+      - name: Build
+        run: ./gradlew build
+
+      - name: Build the service's image
+        run: ./gradlew :backend:origin:service:jibBuildTar
