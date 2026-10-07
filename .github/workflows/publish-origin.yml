@@ -9,6 +9,7 @@ on:
       - '*.gradle.kts'
       - gradle.properties
       - .github/workflows/publish-origin.yml
+      - .github/workflows/check-backend.yml
       - .github/actions/write-back/**
   workflow_dispatch:
 
@@ -27,8 +28,14 @@ env:
   IMAGES: europe-central2-docker.pkg.dev/codefarm-x-07da3c/images
 
 jobs:
+  # The pull requests' checks, so nothing untested is published
+  check:
+    name: Check
+    uses: ./.github/workflows/check-backend.yml
+
   publish-service:
     name: Publish the service
+    needs: check
     runs-on: ubuntu-latest
 
     outputs:
