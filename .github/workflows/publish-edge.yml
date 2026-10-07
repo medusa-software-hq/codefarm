@@ -6,6 +6,7 @@ on:
     paths:
       - backend/edge/**
       - .github/workflows/publish-edge.yml
+      - .github/workflows/check-edge.yml
       - .github/actions/write-back/**
   workflow_dispatch:
 
@@ -23,8 +24,14 @@ env:
   BASE_PROJECT: codefarm-x-07da3c
 
 jobs:
+  # The pull requests' checks, so nothing untested is published
+  check:
+    name: Check
+    uses: ./.github/workflows/check-edge.yml
+
   publish-app:
     name: Publish the app Worker
+    needs: check
     runs-on: ubuntu-latest
 
     outputs:
