@@ -1,0 +1,94 @@
+name: Write back
+description: Pins an artifact in codefarm-infra, through a pull request of its own
+
+inputs:
+  artifact:
+    description: The artifact's name, e.g. edge-app; its pin is infra/app/artifacts/<artifact>.json
+    required: true
+  pin:
+    description: The pin's JSON
+    required: true
+  version:
+    description: The artifact's version, a hash, shortened for the commit message
+    required: true
+  built:
+    description: What was built, for the pull request, e.g. "Bundle `<sha256>`"
+    required: true
+  identity-provider:
+    description: Codefarm's workload identity provider, which trusts the artifact builder on main
+    required: true
+  base-project:
+    description: Codefarm's base project, holding the write-back GitHub App's key
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Log in to GCP
+      uses: google-github-actions/auth@v3
+      with:
+        workload_identity_provider: ${{ inputs.identity-provider }}
+        service_account: artifact-builder@${{ inputs.base-project }}.iam.gserviceaccount.com
+
+    - name: Read the write-back GitHub App's key
+      id: secrets
+      uses: google-github-actions/get-secretmanager-secrets@v3
+      with:
+        secrets: key:${{ inputs.base-project }}/github-write-back-key
+
+    - name: Get a token for codefarm-infra
+      id: token
+      uses: actions/create-github-app-token@v3.2.0
+      with:
+        client-id: Iv23li4vccWccrn8EZ2t
+        private-key: ${{ steps.secrets.outputs.key }}
+        repositories: codefarm-infra
+        permission-contents: write
+        permission-pull-requests: write
+
+    - uses: actions/checkout@v7.0.1
+      with:
+        repository: medusa-software-hq/codefarm-infra
+        token: ${{ steps.token.outputs.token }}
+        path: codefarm-infra
+
+    - name: Open or update the pull request
+      shell: bash
+      working-directory: codefarm-infra
+      env:
+        GH_TOKEN: ${{ steps.token.outputs.token }}
+        APP_SLUG: ${{ steps.token.outputs.app-slug }}
+        ARTIFACT: ${{ inputs.artifact }}
+        PIN: ${{ inputs.pin }}
+        VERSION: ${{ inputs.version }}
+        BUILT: ${{ inputs.built }}
+        SOURCE: ${{ github.repository }}@${{ github.sha }}
+        RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        jq . <<< "$PIN" > "infra/app/artifacts/$ARTIFACT.json"
+        if [[ -z $(git status --porcelain) ]]; then
+          echo "codefarm-infra already pins $ARTIFACT $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+
+        # As the App's bot account, so the commits are attributed to it
+        user_id=$(gh api "/users/$APP_SLUG%5Bbot%5D" --jq .id)
+        git config user.name "$APP_SLUG[bot]"
+        git config user.email "$user_id+$APP_SLUG[bot]@users.noreply.github.com"
+
+        # One branch per artifact, rebuilt from main each time
+        branch="write-back/$ARTIFACT"
+        git switch --create "$branch"
+        git add --all
+        git commit --message "Update $ARTIFACT to ${VERSION:0:12}" --message "Built from $SOURCE in $RUN"
+        git push --force origin "$branch"
+
+        # Rewritten each time, as the open pull request may have pinned an earlier version
+        body="$BUILT, built from $SOURCE in [$GITHUB_WORKFLOW #$GITHUB_RUN_NUMBER]($RUN)."
+        number=$(gh pr list --head "$branch" --json number --jq '.[].number')
+        if [[ -z $number ]]; then
+          gh pr create --head "$branch" --title "Update $ARTIFACT" --body "$body"
+        else
+          gh pr edit "$number" --body "$body"
+        fi
+        echo "Wrote back $ARTIFACT $VERSION" >> "$GITHUB_STEP_SUMMARY"
