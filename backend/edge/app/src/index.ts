@@ -1,4 +1,5 @@
-import { createRemoteJWKSet, errors, jwtVerify } from 'jose';
+import { AccessTokenVerifierProvider, type Caller } from './accessTokenVerifier.ts';
+import { GoogleTokenMinterProvider } from './googleTokenMinter.ts';
 
 /** What the app stack binds to the Worker. */
 interface Env {
@@ -6,57 +7,72 @@ interface Env {
   readonly ACCESS_ISSUER: string;
   /** The audience of the Access application in front of the Worker. */
   readonly ACCESS_AUDIENCE: string;
-  readonly ENVIRONMENT: string;
+  /** Where the origin service answers, which is also the audience of the ID tokens it accepts. */
+  readonly ORIGIN_URL: string;
+  /** A key of the service account that may invoke the origin, in Google's JSON format. */
+  readonly GCP_SA_KEY: string;
 }
 
-/** The issuer's published keys, kept between requests so they aren't fetched for each one. */
-let keys:
-  | { readonly issuer: string; readonly keySet: ReturnType<typeof createRemoteJWKSet> }
-  | undefined;
-
-function keySetOf(issuer: string): ReturnType<typeof createRemoteJWKSet> {
-  if (keys?.issuer !== issuer) {
-    keys = { issuer, keySet: createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`)) };
-  }
-
-  return keys.keySet;
-}
+const callerSubjectHeader = 'x-codefarm-caller-subject';
+const callerEmailHeader = 'x-codefarm-caller-email';
 
 /**
- * Whether Access signed the request in for this application. Cloudflare recommends checking,
- * since a request may reach the Worker without passing Access, e.g. through a misconfiguration.
+ * The caller's headers that the origin gets; it gets nothing else of theirs, nor any of
+ * Cloudflare's, only what the Worker sets itself.
  */
-async function isSignedIn(request: Request, env: Env): Promise<boolean> {
-  const token = request.headers.get('cf-access-jwt-assertion');
-  if (token === null) {
-    return false;
+const forwardedHeaders = ['accept', 'content-type'];
+
+const accessTokenVerifierProvider = new AccessTokenVerifierProvider();
+const googleTokenMinterProvider = new GoogleTokenMinterProvider();
+
+/** The request as the origin gets it, from the caller, with the Worker's ID token. */
+function originRequest(request: Request, caller: Caller, idToken: string, originUrl: string) {
+  const headers = new Headers();
+
+  for (const name of forwardedHeaders) {
+    const value = request.headers.get(name);
+
+    if (value !== null) {
+      headers.set(name, value);
+    }
   }
 
-  try {
-    await jwtVerify(token, keySetOf(env.ACCESS_ISSUER), {
-      issuer: env.ACCESS_ISSUER,
-      audience: env.ACCESS_AUDIENCE,
-      algorithms: ['RS256'],
-    });
-    return true;
-  } catch (error) {
-    // Other errors, like the keys being unreachable, are an outage rather than a bad token
-    if (error instanceof errors.JOSEError) {
-      return false;
-    }
-    throw error;
-  }
+  headers.set(callerSubjectHeader, caller.subject);
+  headers.set(callerEmailHeader, caller.email);
+  // Cloud Run checks this one, leaving `authorization` to the origin
+  headers.set('x-serverless-authorization', `Bearer ${idToken}`);
+
+  const { pathname, search } = new URL(request.url);
+
+  return new Request(new URL(pathname + search, originUrl), {
+    method: request.method,
+    headers,
+    body: request.body,
+    redirect: 'manual',
+  });
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    if (!(await isSignedIn(request, env))) {
+    // Cloudflare recommends checking it, since a request may reach the Worker without passing
+    // Access, e.g. through a misconfiguration
+    const accessToken = request.headers.get('cf-access-jwt-assertion');
+
+    const caller =
+      accessToken === null
+        ? undefined
+        : await accessTokenVerifierProvider
+            .provide(env.ACCESS_ISSUER)
+            .verify(accessToken, env.ACCESS_AUDIENCE);
+
+    if (caller === undefined) {
       return new Response('Forbidden', { status: 403 });
     }
 
-    return new Response(
-      `<!doctype html><title>Codefarm</title><h1>Hello from Codefarm (${env.ENVIRONMENT})</h1>`,
-      { headers: { 'content-type': 'text/html; charset=utf-8' } },
-    );
+    const idToken = await googleTokenMinterProvider
+      .provide(env.GCP_SA_KEY)
+      .idTokenFor(env.ORIGIN_URL);
+
+    return fetch(originRequest(request, caller, idToken, env.ORIGIN_URL));
   },
 };
