@@ -1,0 +1,12 @@
+<!-- For Cloud Logging -->
+<configuration>
+  <appender name="stdout" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="software.medusa.codefarm.origin.service.CloudLoggingEncoder">
+      <projectId>${GOOGLE_CLOUD_PROJECT:-}</projectId>
+    </encoder>
+  </appender>
+
+  <root level="info">
+    <appender-ref ref="stdout"/>
+  </root>
+</configuration>
