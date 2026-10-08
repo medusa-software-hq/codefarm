@@ -1,0 +1,55 @@
+version: '3'
+
+tasks:
+  install:
+    desc: Install the app's dependencies
+    run: once
+    sources:
+      - package.json
+      - yarn.lock
+    generates:
+      - .yarn/install-state.gz
+    cmds:
+      - corepack yarn install --immutable
+
+  typecheck:
+    desc: Type check the app
+    deps: [install]
+    cmds:
+      - corepack yarn tsc --noEmit
+
+  checkFormatting:
+    desc: Check the app's formatting
+    deps: [install]
+    cmds:
+      - corepack yarn oxfmt --check "**/*.{ts,tsx}"
+
+  fixFormatting:
+    desc: Fix the app's formatting
+    deps: [install]
+    cmds:
+      - corepack yarn oxfmt --write "**/*.{ts,tsx}"
+
+  lint:
+    desc: Lint the app
+    deps: [install]
+    cmds:
+      - corepack yarn oxlint --type-aware
+
+  fixLint:
+    desc: Fix lint issues in the app
+    deps: [install]
+    cmds:
+      - corepack yarn oxlint --type-aware --fix
+
+  build:
+    desc: Build the app into dist/
+    deps: [install]
+    cmds:
+      - corepack yarn vite build
+
+  dev:
+    desc: Serve the app locally, rebuilding it on changes
+    deps: [install]
+    cmds:
+      - corepack yarn vite
