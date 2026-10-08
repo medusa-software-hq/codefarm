@@ -106,7 +106,7 @@ function token(
 
 async function fetchWith(
   assertion: string | undefined,
-  { path = '/', headers = {} } = {},
+  { path = '/api/hello', headers = {} } = {},
 ): Promise<Response> {
   return worker.fetch(
     new Request(`https://app.example${path}`, {
@@ -120,6 +120,9 @@ async function fetchWith(
       ACCESS_AUDIENCE: audience,
       ORIGIN_URL: originUrl,
       GCP_SA_KEY: serviceAccountKey,
+      ASSETS: {
+        fetch: (request) => Promise.resolve(new Response(`Asset ${new URL(request.url).pathname}`)),
+      },
     },
   );
 }
@@ -130,12 +133,12 @@ async function forwarded(response: Response): Promise<Forwarded> {
 }
 
 describe('the Worker', () => {
-  test('forwards the request of whoever Access signed in to the origin', async () => {
+  test("forwards API requests of whoever Access signed in to the origin's API", async () => {
     const { url, headers } = await forwarded(
-      await fetchWith(await token(), { path: '/hello?name=world' }),
+      await fetchWith(await token(), { path: '/api/hello?name=world' }),
     );
 
-    assert.equal(url, '/hello?name=world');
+    assert.equal(url, '/impl/api/hello?name=world');
     assert.equal(headers['x-codefarm-caller-subject'], 'person');
     assert.equal(headers['x-codefarm-caller-email'], 'person@example.com');
     assert.match(headers['x-serverless-authorization'] ?? '', /^Bearer id-token-\d+$/);
@@ -178,6 +181,18 @@ describe('the Worker', () => {
       second.headers['x-serverless-authorization'],
       first.headers['x-serverless-authorization'],
     );
+  });
+
+  test("serves other requests from the frontend's files", async () => {
+    for (const path of ['/', '/settings', '/apiary', '/api']) {
+      const response = await fetchWith(await token(), { path });
+
+      assert.equal(await response.text(), `Asset ${path}`);
+    }
+  });
+
+  test("refuses the frontend's files without a token too", async () => {
+    assert.equal((await fetchWith(undefined, { path: '/' })).status, 403);
   });
 
   test('refuses a request without a token', async () => {

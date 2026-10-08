@@ -7,10 +7,10 @@ import io.micronaut.http.annotation.RequestFilter
 import io.micronaut.http.annotation.ServerFilter
 
 /**
- * Refuses requests that don't name a caller. The edge always does, so a request without one reached
- * the service some other way, e.g. through a misconfiguration.
+ * Refuses API requests that don't name a caller. The edge always does, so a request without one
+ * reached the service some other way, e.g. through a misconfiguration.
  */
-@ServerFilter(ServerFilter.MATCH_ALL_PATTERN)
+@ServerFilter("/impl/api/**")
 class CallerFilter {
   @RequestFilter
   fun requireCaller(request: HttpRequest<*>): HttpResponse<*>? =
