@@ -1,0 +1,25 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: ['config:recommended'],
+  // Yarn installs nothing younger by default
+  minimumReleaseAge: '1 day',
+  customManagers: [
+    {
+      // Jib's base images
+      customType: 'regex',
+      managerFilePatterns: ['/(^|/)build\\.gradle\\.kts$/'],
+      matchStrings: [
+        'image =\\s*"(?<depName>[^:"]+):(?<currentValue>[^@"]+)@(?<currentDigest>sha256:[0-9a-f]{64})"',
+      ],
+      datasourceTemplate: 'docker',
+    },
+    {
+      // Which the Micronaut plugin reads, so Renovate's Gradle support doesn't see it
+      customType: 'regex',
+      managerFilePatterns: ['/^gradle\\.properties$/'],
+      matchStrings: ['micronautVersion=(?<currentValue>\\S+)'],
+      depNameTemplate: 'io.micronaut.platform:micronaut-platform',
+      datasourceTemplate: 'maven',
+    },
+  ],
+}
