@@ -13,6 +13,10 @@ includes:
     taskfile: gradle.Taskfile.yml
     dir: .
 
+  frontend:
+    taskfile: frontend/Taskfile.yml
+    dir: frontend
+
 tasks:
   fixAll:
     desc: Apply all automatic fixes
@@ -21,3 +25,5 @@ tasks:
       - edge:fixFormatting
       - edge:fixLint
       - gradle:fixFormatting
+      - frontend:fixFormatting
+      - frontend:fixLint

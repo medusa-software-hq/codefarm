@@ -1,0 +1,102 @@
+name: Publish frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - frontend/**
+      - .github/workflows/publish-frontend.yml
+      - .github/workflows/check-frontend.yml
+      - .github/actions/write-back/**
+  workflow_dispatch:
+
+concurrency:
+  group: publish-frontend
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  NO_COLOR: 1
+  # Codefarm's pool, which trusts the artifact builder on main
+  CODEFARM_POOL_PROVIDER: projects/76431914348/locations/global/workloadIdentityPools/github/providers/github-actions
+  BASE_PROJECT: codefarm-x-07da3c
+
+jobs:
+  # The pull requests' checks, so nothing untested is published
+  check:
+    name: Check
+    uses: ./.github/workflows/check-frontend.yml
+
+  publish:
+    name: Publish the frontend
+    needs: check
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.upload.outputs.version }}
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: frontend/.nvmrc
+
+      - name: Install dependencies
+        run: corepack yarn install --immutable
+
+      - name: Build the frontend
+        run: corepack yarn vite build
+
+      # Without timestamps, owners or an unstable order, so the same files give the same archive
+      - name: Archive the build
+        run: |
+          tar --create --directory=dist --sort=name --mtime=@0 --format=gnu \
+            --owner=0 --group=0 --numeric-owner --mode='a+rX,u+w,go-w' . \
+            | gzip --no-name --best > frontend.tar.gz
+
+      - name: Log in to GCP
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.CODEFARM_POOL_PROVIDER }}
+          service_account: artifact-builder@${{ env.BASE_PROJECT }}.iam.gserviceaccount.com
+
+      # Versioned by its SHA-256, so an unchanged archive is already there
+      - name: Upload the archive
+        id: upload
+        run: |
+          version=$(sha256sum frontend.tar.gz | cut --delimiter=' ' --fields=1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          bundles=(--repository=bundles --location=europe-central2 --project="$BASE_PROJECT")
+
+          if gcloud artifacts versions describe "$version" --package=frontend "${bundles[@]}" \
+            > /dev/null 2>&1; then
+            echo "\`frontend\` \`$version\` is already uploaded" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            gcloud artifacts generic upload --package=frontend --version="$version" \
+              --source=frontend.tar.gz "${bundles[@]}"
+            echo "Uploaded \`frontend\` \`$version\`" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+  write-back:
+    name: Write back to codefarm-infra
+    needs: publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: ./.github/actions/write-back
+        with:
+          artifact: frontend
+          pin: '{"sha256": "${{ needs.publish.outputs.version }}"}'
+          version: ${{ needs.publish.outputs.version }}
+          built: Archive `${{ needs.publish.outputs.version }}`
+          identity-provider: ${{ env.CODEFARM_POOL_PROVIDER }}
+          base-project: ${{ env.BASE_PROJECT }}
