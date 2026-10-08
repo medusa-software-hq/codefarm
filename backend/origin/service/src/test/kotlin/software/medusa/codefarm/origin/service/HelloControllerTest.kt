@@ -2,6 +2,7 @@ package software.medusa.codefarm.origin.service
 
 import io.micronaut.http.HttpRequest
 import io.micronaut.http.HttpStatus
+import io.micronaut.http.MediaType
 import io.micronaut.http.client.HttpClient
 import io.micronaut.http.client.annotation.Client
 import io.micronaut.http.client.exceptions.HttpClientResponseException
@@ -22,10 +23,10 @@ class HelloControllerTest {
             .header(callerSubjectHeader, "person")
             .header(callerEmailHeader, "person@example.com")
 
-    assertEquals(
-        "Hello, person@example.com, from Codefarm's origin",
-        client.toBlocking().retrieve(request),
-    )
+    val response = client.toBlocking().exchange(request, String::class.java)
+
+    assertEquals("Hello, person@example.com, from Codefarm's origin", response.body())
+    assertEquals(MediaType.TEXT_PLAIN_TYPE, response.contentType.orElse(null))
   }
 
   @Test
