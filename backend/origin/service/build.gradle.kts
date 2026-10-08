@@ -8,10 +8,11 @@ plugins {
 }
 
 dependencies {
+  implementation("io.micronaut:micronaut-context-propagation")
   implementation("io.micronaut:micronaut-http-server-netty")
   implementation("io.micronaut.kotlin:micronaut-kotlin-runtime")
   implementation("io.micronaut.serde:micronaut-serde-jackson")
-  runtimeOnly("ch.qos.logback:logback-classic")
+  implementation("ch.qos.logback:logback-classic")
 
   testImplementation("io.micronaut:micronaut-http-client")
   testImplementation(libs.kotlin.test)
@@ -37,5 +38,6 @@ jib {
   container {
     mainClass = application.mainClass.get()
     ports = listOf("8080")
+    jvmFlags = listOf("-Dlogback.configurationFile=logback-json.xml")
   }
 }

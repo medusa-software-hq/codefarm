@@ -30,16 +30,27 @@ const callerEmailHeader = 'x-codefarm-caller-email';
  */
 const forwardedHeaders = ['accept', 'content-type'];
 
+/** Random bytes in hex, as the IDs of a trace context are. */
+function randomHex(byteCount: number) {
+  return Array.from(crypto.getRandomValues(new Uint8Array(byteCount)), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('');
+}
+
 const accessTokenVerifierProvider = new AccessTokenVerifierProvider();
 const googleTokenMinterProvider = new GoogleTokenMinterProvider();
 
-/** The request as the origin gets it at the path, from the caller, with the Worker's ID token. */
+/**
+ * The request as the origin gets it at the path, from the caller, with the Worker's ID token, in
+ * the trace.
+ */
 function originRequest(
   request: Request,
   originPath: string,
   caller: Caller,
   idToken: string,
   originUrl: string,
+  traceId: string,
 ) {
   const headers = new Headers();
 
@@ -55,6 +66,8 @@ function originRequest(
   headers.set(callerEmailHeader, caller.email);
   // Cloud Run checks this one, leaving `authorization` to the origin
   headers.set('x-serverless-authorization', `Bearer ${idToken}`);
+  // Sampled, so that Cloud Run records the request in the trace, and its logs under it
+  headers.set('traceparent', `00-${traceId}-${randomHex(8)}-01`);
 
   const { search } = new URL(request.url);
 
@@ -95,6 +108,15 @@ export default {
       .provide(env.GCP_SA_KEY)
       .idTokenFor(env.ORIGIN_URL);
 
-    return fetch(originRequest(request, originPath, caller, idToken, env.ORIGIN_URL));
+    const traceId = randomHex(16);
+
+    const response = await fetch(
+      originRequest(request, originPath, caller, idToken, env.ORIGIN_URL, traceId),
+    );
+
+    // Workers Logs indexes its fields, so the origin's logs can be found by the trace
+    console.log({ message: 'Forwarded to the origin', traceId, status: response.status });
+
+    return response;
   },
 };

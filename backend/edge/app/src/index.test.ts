@@ -3,7 +3,7 @@ import worker from './index.ts';
 import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { after, before, describe, test } from 'node:test';
+import { after, before, describe, mock, test } from 'node:test';
 
 const audience = 'app-audience';
 
@@ -27,6 +27,9 @@ let serviceAccountKey: string;
 
 /** How many ID tokens Google's fake token endpoint minted. */
 let minted = 0;
+
+/** What the Worker logged. */
+const logged = mock.method(console, 'log', () => {});
 
 function readBody(request: IncomingMessage): Promise<string> {
   return new Promise((resolve) => {
@@ -155,6 +158,7 @@ describe('the Worker', () => {
           'x-other': 'other',
           'x-codefarm-caller-email': 'someone-else@example.com',
           'x-serverless-authorization': 'Bearer forged',
+          traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
         },
       }),
     );
@@ -169,6 +173,26 @@ describe('the Worker', () => {
 
     assert.equal(headers['x-codefarm-caller-email'], 'person@example.com');
     assert.notEqual(headers['x-serverless-authorization'], 'Bearer forged');
+    assert.doesNotMatch(headers['traceparent'] ?? '', /0af7651916cd43dd8448eb211c80319c/);
+  });
+
+  test('starts a trace for each request to the origin, and logs it', async () => {
+    const traceIds = [];
+
+    for (let i = 0; i < 2; i++) {
+      logged.mock.resetCalls();
+
+      const { headers } = await forwarded(await fetchWith(await token()));
+      const [, traceId] =
+        /^00-([0-9a-f]{32})-[0-9a-f]{16}-01$/.exec(headers['traceparent'] ?? '') ?? [];
+
+      assert.deepEqual(logged.mock.calls.at(-1)?.arguments, [
+        { message: 'Forwarded to the origin', traceId, status: 200 },
+      ]);
+      traceIds.push(traceId);
+    }
+
+    assert.notEqual(traceIds[0], traceIds[1]);
   });
 
   test('reuses the ID token it minted', async () => {
