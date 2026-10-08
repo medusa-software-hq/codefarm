@@ -67,7 +67,7 @@ runs:
       run: |
         jq . <<< "$PIN" > "infra/app/artifacts/$ARTIFACT.json"
         if [[ -z $(git status --porcelain) ]]; then
-          echo "codefarm-infra already pins \`$ARTIFACT\` at \`$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "codefarm-infra already pins \`$ARTIFACT\` at \`$VERSION\`" | tee -a "$GITHUB_STEP_SUMMARY"
           exit 0
         fi
 
@@ -91,4 +91,4 @@ runs:
         else
           gh pr edit "$url" --body "$body"
         fi
-        echo "Pinned \`$ARTIFACT\` at \`$VERSION\` in [codefarm-infra#${url##*/}]($url)" >> "$GITHUB_STEP_SUMMARY"
+        echo "Pinned \`$ARTIFACT\` at \`$VERSION\` in [codefarm-infra#${url##*/}]($url)" | tee -a "$GITHUB_STEP_SUMMARY"
