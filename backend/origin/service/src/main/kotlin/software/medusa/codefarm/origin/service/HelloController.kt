@@ -6,9 +6,9 @@ import io.micronaut.http.annotation.Get
 import io.micronaut.http.annotation.Header
 import io.micronaut.http.annotation.Produces
 
-@Controller
+@Controller("/impl/api")
 class HelloController {
-  @Get
+  @Get("/hello")
   @Produces(MediaType.TEXT_PLAIN)
   fun hello(@Header(callerEmailHeader) callerEmail: String): String =
       "Hello, $callerEmail, from Codefarm's origin"

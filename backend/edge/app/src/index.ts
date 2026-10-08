@@ -11,7 +11,15 @@ interface Env {
   readonly ORIGIN_URL: string;
   /** A key of the service account that may invoke the origin, in Google's JSON format. */
   readonly GCP_SA_KEY: string;
+  /** The frontend's files, uploaded with the Worker. */
+  readonly ASSETS: { fetch(request: Request): Promise<Response> };
 }
+
+/** Requests under this path are for the origin's API; the rest, for the frontend's files. */
+const apiPrefix = '/api/';
+
+/** Where the origin answers the API, as an implementation detail behind the edge. */
+const originApiPrefix = '/impl/api/';
 
 const callerSubjectHeader = 'x-codefarm-caller-subject';
 const callerEmailHeader = 'x-codefarm-caller-email';
@@ -25,8 +33,14 @@ const forwardedHeaders = ['accept', 'content-type'];
 const accessTokenVerifierProvider = new AccessTokenVerifierProvider();
 const googleTokenMinterProvider = new GoogleTokenMinterProvider();
 
-/** The request as the origin gets it, from the caller, with the Worker's ID token. */
-function originRequest(request: Request, caller: Caller, idToken: string, originUrl: string) {
+/** The request as the origin gets it at the path, from the caller, with the Worker's ID token. */
+function originRequest(
+  request: Request,
+  originPath: string,
+  caller: Caller,
+  idToken: string,
+  originUrl: string,
+) {
   const headers = new Headers();
 
   for (const name of forwardedHeaders) {
@@ -42,9 +56,9 @@ function originRequest(request: Request, caller: Caller, idToken: string, origin
   // Cloud Run checks this one, leaving `authorization` to the origin
   headers.set('x-serverless-authorization', `Bearer ${idToken}`);
 
-  const { pathname, search } = new URL(request.url);
+  const { search } = new URL(request.url);
 
-  return new Request(new URL(pathname + search, originUrl), {
+  return new Request(new URL(originPath + search, originUrl), {
     method: request.method,
     headers,
     body: request.body,
@@ -69,10 +83,18 @@ export default {
       return new Response('Forbidden', { status: 403 });
     }
 
+    const { pathname } = new URL(request.url);
+
+    if (!pathname.startsWith(apiPrefix)) {
+      return env.ASSETS.fetch(request);
+    }
+
+    const originPath = originApiPrefix + pathname.slice(apiPrefix.length);
+
     const idToken = await googleTokenMinterProvider
       .provide(env.GCP_SA_KEY)
       .idTokenFor(env.ORIGIN_URL);
 
-    return fetch(originRequest(request, caller, idToken, env.ORIGIN_URL));
+    return fetch(originRequest(request, originPath, caller, idToken, env.ORIGIN_URL));
   },
 };

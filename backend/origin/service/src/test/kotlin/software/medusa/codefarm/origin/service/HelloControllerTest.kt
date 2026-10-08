@@ -19,7 +19,7 @@ class HelloControllerTest {
   @Test
   fun `greets the caller the edge names`() {
     val request =
-        HttpRequest.GET<Any>("/")
+        HttpRequest.GET<Any>("/impl/api/hello")
             .header(callerSubjectHeader, "person")
             .header(callerEmailHeader, "person@example.com")
 
@@ -31,7 +31,10 @@ class HelloControllerTest {
 
   @Test
   fun `refuses a request that names no caller`() {
-    val error = assertFailsWith<HttpClientResponseException> { client.toBlocking().retrieve("/") }
+    val error =
+        assertFailsWith<HttpClientResponseException> {
+          client.toBlocking().retrieve("/impl/api/hello")
+        }
 
     assertEquals(HttpStatus.FORBIDDEN, error.status)
   }
