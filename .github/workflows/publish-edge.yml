@@ -72,11 +72,11 @@ jobs:
 
           if gcloud artifacts versions describe "$version" --package=edge-app "${bundles[@]}" \
             > /dev/null 2>&1; then
-            echo "\`edge-app\` \`$version\` is already uploaded" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`edge-app\` \`$version\` is already uploaded" | tee -a "$GITHUB_STEP_SUMMARY"
           else
             gcloud artifacts generic upload --package=edge-app --version="$version" \
               --source=app/dist/worker.js "${bundles[@]}"
-            echo "Uploaded \`edge-app\` \`$version\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "Uploaded \`edge-app\` \`$version\`" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 
   write-back:
