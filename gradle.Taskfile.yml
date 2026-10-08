@@ -28,3 +28,9 @@ tasks:
     desc: Build the service's image into backend/origin/service/build/jib-image.tar
     cmds:
       - ./gradlew :backend:origin:service:jibBuildTar
+
+  runService:
+    desc: Run the service locally, on port 8080
+    interactive: true
+    cmds:
+      - ./gradlew :backend:origin:service:run --console=plain
